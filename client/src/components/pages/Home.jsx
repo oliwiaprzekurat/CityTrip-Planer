@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import WeatherComponent from "../../components/WeatherComponent";
 import PlannerComponent from "../PlannerComponent";
+import CurrencyComponent from "./CurrencyComponent";
 import "../style/style.css";
 
 const Home = () => {
@@ -10,7 +11,7 @@ const Home = () => {
   const [error, setError] = useState(null);
   const [history, setHistory] = useState([]);
   const [savedPlans, setSavedPlans] = useState([]);
-  const [editingCity, setEditingCity] = useState(null); // Przechowuje nazwę miasta, które aktualnie edytujemy
+  const [editingCity, setEditingCity] = useState(null);
   const [editingGlobalId, setEditingGlobalId] = useState(null);
   const [editGlobalValue, setEditGlobalValue] = useState("");
   
@@ -27,7 +28,6 @@ const Home = () => {
     fetchHistory();
   }, [tripData]);
 
-  // Pobieranie wszystkich zapisanych planów z bazy
   const fetchSavedPlans = async () => {
     try {
       const res = await fetch(`http://localhost:5000/api/all-saved-plans`);
@@ -70,10 +70,8 @@ const Home = () => {
   };
 
 const handleSaveAttraction = async (attractionName, targetCity = null) => {
-  // 1. Wybieramy miasto: albo to z argumentu (dolna karta), albo to z wyszukiwarki
   const cityToSave = targetCity || (tripData ? tripData.city_name : null);
 
-  // 2. Jeśli nadal nie mamy nazwy miasta, nie wysyłamy nic
   if (!cityToSave) {
     console.error("Błąd: Nie określono miasta do zapisu!");
     return;
@@ -90,7 +88,7 @@ const handleSaveAttraction = async (attractionName, targetCity = null) => {
     });
 
     if (response.ok) {
-      await fetchSavedPlans(); // Odświeżamy listę, by nowy punkt się pojawił
+      await fetchSavedPlans();
     }
   } catch (err) {
     console.error("Błąd podczas zapisywania:", err);
@@ -98,7 +96,7 @@ const handleSaveAttraction = async (attractionName, targetCity = null) => {
 };
 
 const handleEditAttraction = async (id, newName) => {
-  console.log("Próba zapisu edycji dla ID:", id, "Nowa nazwa:", newName); // Sprawdź to w konsoli!
+  console.log("Próba zapisu edycji dla ID:", id, "Nowa nazwa:", newName);
   
   if (!newName || !newName.trim()) {
     setEditingGlobalId(null);
@@ -114,14 +112,14 @@ const handleEditAttraction = async (id, newName) => {
 
     if (response.ok) {
       console.log("Zapisano pomyślnie w bazie!");
-      await fetchSavedPlans(); // Odświeżamy listę
+      await fetchSavedPlans();
     } else {
       console.error("Serwer zwrócił błąd przy edycji");
     }
   } catch (err) {
     console.error("Błąd połączenia z API przy edycji:", err);
   } finally {
-    setEditingGlobalId(null); // Zawsze zamykamy okno edycji
+    setEditingGlobalId(null);
   }
 };
 
@@ -139,13 +137,11 @@ return (
     <div className="home-container">
       <div className="home-content">
         
-        {/* NAGŁÓWEK - TYTUŁ I OPIS */}
         <header className="header-section">
           <h1>CityTrip Explorer</h1>
           <p>Inteligentne planowanie Twoich podróży</p>
         </header>
 
-        {/* WYSZUKIWARKA MIAST */}
         <section className="search-box">
           <form onSubmit={handleSearch} className="search-form">
             <input 
@@ -161,11 +157,16 @@ return (
           {error && <p style={{ color: 'red', marginTop: '10px' }}>{error}</p>}
         </section>
 
-        {/* DANE POGODOWE I PLANER GŁÓWNY */}
         {tripData && (
           <div className="data-grid">
             <div className="data-card">
               <WeatherComponent weatherData={tripData} />
+              
+              {tripData.currency && (
+                <div style={{ marginTop: '20px' }}>
+                  <CurrencyComponent currencyData={tripData.currency} />
+                </div>
+              )}
             </div>
             <div className="data-card">
               <PlannerComponent 
@@ -183,7 +184,6 @@ return (
           </div>
         )}
 
-        {/* OSTATNIE WYSZUKIWANIA */}
         <section className="history-section">
           <h3 className="history-title">Ostatnie wyszukiwania</h3>
           <div className="history-list">
@@ -195,14 +195,12 @@ return (
           </div>
         </section>
 
-        {/* TWOJE ZAPISANE PLANY - PEŁNE ZARZĄDZANIE */}
         <section className="history-section" style={{ marginTop: '40px', borderTop: '2px solid #1e293b', paddingTop: '30px' }}>
           <h2 style={{ color: '#4facfe', marginBottom: '20px' }}>🗃️ Zarządzaj swoimi listami</h2>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '20px' }}>
             {Array.from(new Set(savedPlans.map(p => p.city_name))).map(cityName => (
               <div key={cityName} className="data-card" style={{ borderLeft: '4px solid #4facfe', display: 'flex', flexDirection: 'column', minHeight: '300px' }}>
                 
-                {/* NAGŁÓWEK KARTY MIASTA Z PRZYCISKIEM TRYBU EDYCJI */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px', borderBottom: '1px solid #ffffff10', paddingBottom: '10px' }}>
                   <h4 style={{ margin: 0, textTransform: 'uppercase', color: '#4facfe' }}>{cityName}</h4>
                   <button 
@@ -216,36 +214,33 @@ return (
                   </button>
                 </div>
                 
-                {/* LISTA PUNKTÓW DLA DANEGO MIASTA */}
                 <ul style={{ listStyle: 'none', padding: 0, flex: 1 }}>
                   {savedPlans.filter(p => p.city_name === cityName).map(plan => (
                     <li key={plan.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 0', borderBottom: '1px solid #ffffff05' }}>
                       
                       {editingGlobalId === plan.id ? (
-  <input 
-    autoFocus
-    className="search-input" 
-    style={{ fontSize: '0.8rem', padding: '5px', height: 'auto', flex: 1, background: '#0f172a', border: '1px solid #4facfe' }}
-    value={editGlobalValue}
-    onChange={(e) => setEditGlobalValue(e.target.value)}
-    onKeyDown={(e) => {
-      if (e.key === 'Enter') {
-        // WYWOŁANIE FUNKCJI
-        handleEditAttraction(plan.id, editGlobalValue); 
-      }
-      if (e.key === 'Escape') {
-        setEditingGlobalId(null);
-      }
-    }}
-    onBlur={() => handleEditAttraction(plan.id, editGlobalValue)} // Zapisz też gdy klikniesz obok
-  />
-) : (
-  <span style={{ fontSize: '0.9rem', flex: 1, color: '#e2e8f0' }}>
-    {plan.attraction_name}
-  </span>
-)}
+                        <input 
+                          autoFocus
+                          className="search-input" 
+                          style={{ fontSize: '0.8rem', padding: '5px', height: 'auto', flex: 1, background: '#0f172a', border: '1px solid #4facfe' }}
+                          value={editGlobalValue}
+                          onChange={(e) => setEditGlobalValue(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              handleEditAttraction(plan.id, editGlobalValue); 
+                            }
+                            if (e.key === 'Escape') {
+                              setEditingGlobalId(null);
+                            }
+                          }}
+                          onBlur={() => handleEditAttraction(plan.id, editGlobalValue)}
+                        />
+                      ) : (
+                        <span style={{ fontSize: '0.9rem', flex: 1, color: '#e2e8f0' }}>
+                          {plan.attraction_name}
+                        </span>
+                      )}
 
-                      {/* IKONY MODYFIKACJI - WIDOCZNE TYLKO W TRYBIE EDYCJI KARTY */}
                       {editingCity === cityName && (
                         <div style={{ display: 'flex', gap: '8px' }}>
                           <button 
@@ -271,7 +266,6 @@ return (
                   ))}
                 </ul>
 
-                {/* SZYBKIE DODAWANIE DO TEGO KONKRETNEGO MIASTA */}
                 <div style={{ marginTop: '15px' }}>
                   <input 
                     placeholder={`Dodaj punkt do: ${cityName}...`}

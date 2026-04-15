@@ -16,7 +16,6 @@ pool.connect()
   .then(() => console.log("✅ Połączono z PostgreSQL (projekt_db)!"))
   .catch(err => console.error("❌ Błąd bazy:", err));
 
-// --- 1. WYSZUKIWANIE MIASTA (POGODA, WIKI, ATRAKCJE) ---
 app.get('/api/search', async (req, res) => {
   const city = req.query.city;
   const API_KEY = "5e95dbc79fea865d1535c873d3b4dc61";
@@ -24,9 +23,38 @@ app.get('/api/search', async (req, res) => {
   if (!city) return res.status(400).json({ error: "Brak nazwy miasta" });
 
   try {
+    // 1. Pobieranie pogody i KODU KRAJU
     const weatherRes = await axios.get(`https://api.openweathermap.org/data/2.5/weather?q=${city}&appid=${API_KEY}&units=metric&lang=pl`);
     const officialName = weatherRes.data.name;
+    const countryCode = weatherRes.data.sys.country; // Pobieramy np. "IT", "PL", "CZ"
 
+    // 2. LOGIKA WALUT
+    const currencyMap = {
+      'PL': 'PLN',
+      'DE': 'EUR', 'IT': 'EUR', 'FR': 'EUR', 'ES': 'EUR', 'AT': 'EUR', 'BE': 'EUR', 'NL': 'EUR', 'GR': 'EUR', 'HR': 'EUR',
+      'US': 'USD', 'GB': 'GBP', 'CZ': 'CZK', 'CH': 'CHF', 'HU': 'HUF'
+    };
+
+    const currencyCode = currencyMap[countryCode] || 'EUR'; // Domyślnie EUR dla reszty Europy
+    let currencyData = null;
+
+    if (currencyCode === 'PLN') {
+      currencyData = { code: 'PLN', mid_rate: 1 };
+    } else {
+      try {
+        // Pobieramy kurs z NBP
+        const nbpRes = await axios.get(`http://api.nbp.pl/api/exchangerates/rates/a/${currencyCode}/?format=json`);
+        currencyData = {
+          code: currencyCode,
+          mid_rate: nbpRes.data.rates[0].mid
+        };
+      } catch (nbpErr) {
+        console.log("Błąd NBP, używam kursu awaryjnego");
+        currencyData = { code: currencyCode, mid_rate: 4.30 }; // Kurs "na sztywno" w razie awarii API
+      }
+    }
+
+    // 3. Pobieranie prognozy
     const forecastRes = await axios.get(`https://api.openweathermap.org/data/2.5/forecast?q=${city}&appid=${API_KEY}&units=metric&lang=pl`);
     const forecastData = forecastRes.data.list
       .filter((item, index) => index % 8 === 0)
@@ -36,6 +64,7 @@ app.get('/api/search', async (req, res) => {
         desc: item.weather[0].description
       })).slice(0, 5);
 
+    // 4. Pobieranie opisu z Wikipedii
     let wikiDescription = "Brak dostępnego opisu.";
     const titlesToTry = [`${officialName}_(miasto)`, officialName];
 
@@ -51,6 +80,7 @@ app.get('/api/search', async (req, res) => {
       } catch (err) { continue; }
     }
 
+    // 5. Pobieranie listy atrakcji
     let attractionsList = [];
     try {
       const wikiSearchUrl = `https://pl.wikipedia.org/w/api.php?action=opensearch&search=${encodeURIComponent('Atrakcje ' + officialName)}&limit=10&format=json&origin=*`;
@@ -60,6 +90,7 @@ app.get('/api/search', async (req, res) => {
       }
     } catch (e) { console.log("Błąd atrakcji"); }
 
+    // 6. Składanie finalnej odpowiedzi
     const responseData = {
       city_name: officialName,
       weather_info: {
@@ -69,16 +100,18 @@ app.get('/api/search', async (req, res) => {
       },
       forecast: forecastData,
       top_attractions: wikiDescription,
-      top_attractions_list: attractionsList
+      top_attractions_list: attractionsList,
+      currency: currencyData // <--- TO PRZESYŁAMY DO REACTA
     };
 
+    // Zapis do historii (PostgreSQL)
     await pool.query(
-  `INSERT INTO trips (city_name, temp, description) 
-   VALUES ($1, $2, $3) 
-   ON CONFLICT (city_name) 
-   DO UPDATE SET temp = EXCLUDED.temp, description = EXCLUDED.description, date = NOW()`,
-  [officialName, responseData.weather_info.temp, responseData.weather_info.condition]
-);
+      `INSERT INTO trips (city_name, temp, description) 
+       VALUES ($1, $2, $3) 
+       ON CONFLICT (city_name) 
+       DO UPDATE SET temp = EXCLUDED.temp, description = EXCLUDED.description, date = NOW()`,
+      [officialName, responseData.weather_info.temp, responseData.weather_info.condition]
+    );
 
     res.json(responseData);
 
@@ -88,7 +121,6 @@ app.get('/api/search', async (req, res) => {
   }
 });
 
-// --- 2. HISTORIA WYSZUKIWANIA MIAST ---
 app.get('/api/history', async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM trips ORDER BY date DESC LIMIT 5');
@@ -98,7 +130,6 @@ app.get('/api/history', async (req, res) => {
   }
 });
 
-// --- 3. ZAPISYWANIE PUNKTU DO PLANU (Nowe) ---
 app.post('/api/save-plan', async (req, res) => {
   const { city, attraction } = req.body;
   if (!city || !attraction) return res.status(400).json({ error: "Brak danych" });
@@ -115,7 +146,6 @@ app.post('/api/save-plan', async (req, res) => {
   }
 });
 
-// --- 4. POBIERANIE WSZYSTKICH ZAPISANYCH PLANÓW (Nowe) ---
 app.get('/api/all-saved-plans', async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM saved_plans ORDER BY created_at DESC');
@@ -126,7 +156,6 @@ app.get('/api/all-saved-plans', async (req, res) => {
   }
 });
 
-// --- 5. USUWANIE PUNKTU Z PLANU (Nowe) ---
 app.delete('/api/save-plan/:id', async (req, res) => {
   const { id } = req.params;
   try {
@@ -138,7 +167,7 @@ app.delete('/api/save-plan/:id', async (req, res) => {
     res.status(500).json({ error: "Błąd bazy danych" });
   }
 });
-// --- 6. EDYCJA PUNKTU W PLANIE (Niezbędne do działania edycji) ---
+
 app.put('/api/save-plan/:id', async (req, res) => {
   const { id } = req.params;
   const { attraction } = req.body;

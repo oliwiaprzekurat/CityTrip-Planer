@@ -11,7 +11,6 @@ const getWeatherIcon = (desc) => {
 };
 
 const WeatherComponent = ({ weatherData }) => {
-  // Sprawdzamy czy dane dopłynęły
   if (!weatherData || !weatherData.weather_info) return null;
 
   const { city_name, weather_info, forecast } = weatherData;
@@ -44,7 +43,6 @@ const WeatherComponent = ({ weatherData }) => {
       </div>
     </div>
 
-      {/* PROGNOZA 5 DNI */}
       <div className="p-4 bg-white rounded-2xl shadow-sm border border-gray-100">
         <h4 className="text-sm font-bold text-gray-400 uppercase mb-4 flex items-center gap-2">
           <Sun size={16} /> Prognoza 5-dniowa
@@ -54,14 +52,12 @@ const WeatherComponent = ({ weatherData }) => {
           {forecast && forecast.map((day, index) => (
             <div key={index} className="flex flex-col items-center gap-1">
               <span className="text-xs font-medium text-gray-500">{day.day}</span>
-              {/* TUTAJ WYWOŁUJEMY FUNKCJĘ */}
               {getWeatherIcon(day.desc)}
               <span className="text-sm font-bold text-gray-800">{day.temp}°C</span>
             </div>
           ))}
         </div>
 
-        {/* WYKRES RECHARTS */}
         <div className="h-32 w-full">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={forecast}>

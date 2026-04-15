@@ -2,11 +2,10 @@ import React, { useState } from 'react';
 import { MapPin, CheckCircle, Trash2, Edit3, Save, X } from 'lucide-react';
 import './style/style.css';
 
-// Dodajemy onEdit do propsów
 const PlannerComponent = ({ cityName, attractions, attractionsList, savedPlans, onSave, onDelete, onEdit }) => {
   const [input, setInput] = useState('');
-  const [editingId, setEditingId] = useState(null); // ID elementu, który edytujemy
-  const [editValue, setEditValue] = useState(''); // Nowa nazwa dla edytowanego elementu
+  const [editingId, setEditingId] = useState(null);
+  const [editValue, setEditValue] = useState('');
 
   const handleFormSubmit = (e) => {
     e.preventDefault();
@@ -51,7 +50,6 @@ const PlannerComponent = ({ cityName, attractions, attractionsList, savedPlans, 
         </div>
       )}
 
-      {/* PRZYCISKI SUGESTII */}
       <div className="mb-10">
         <p className="text-gray-400 text-xs mb-3 font-bold uppercase tracking-wider">Sugestie z Wikipedii:</p>
         <div className="flex flex-wrap gap-2">
@@ -67,7 +65,6 @@ const PlannerComponent = ({ cityName, attractions, attractionsList, savedPlans, 
         </div>
       </div>
 
-      {/* FORMULARZ DODAWANIA */}
       <form onSubmit={handleFormSubmit} className="flex gap-3 mb-8">
         <input 
           className="flex-1 bg-slate-900 border border-white/10 p-4 rounded-2xl text-white focus:border-blue-500 outline-none transition-all" 
@@ -80,7 +77,6 @@ const PlannerComponent = ({ cityName, attractions, attractionsList, savedPlans, 
         </button>
       </form>
 
-      {/* LISTA ZAPISANA W BAZIE DANYCH */}
       <div className="grid gap-3">
         <p className="text-gray-400 text-xs font-bold uppercase tracking-wider">Twoja lista dla: {cityName}</p>
         {savedPlans?.length === 0 && <p className="text-gray-500 text-sm italic">Brak zapisanych punktów dla tego miasta.</p>}

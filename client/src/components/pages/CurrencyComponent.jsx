@@ -1,5 +1,5 @@
 import React from "react";
-import './style/style.css';
+import "../style/style.css";
 
 const CurrencyComponent = ({ currencyData }) => {
   if (!currencyData) return null;
