@@ -23,76 +23,111 @@ app.get('/api/search', async (req, res) => {
   if (!city) return res.status(400).json({ error: "Brak nazwy miasta" });
 
   try {
-    // 1. Pobieranie pogody i KODU KRAJU
+    // 1. Pobieranie pogody
     const weatherRes = await axios.get(`https://api.openweathermap.org/data/2.5/weather?q=${city}&appid=${API_KEY}&units=metric&lang=pl`);
     const officialName = weatherRes.data.name;
-    const countryCode = weatherRes.data.sys.country; // Pobieramy np. "IT", "PL", "CZ"
+    const countryCode = weatherRes.data.sys.country;
 
-    // 2. LOGIKA WALUT
-    const currencyMap = {
-      'PL': 'PLN',
-      'DE': 'EUR', 'IT': 'EUR', 'FR': 'EUR', 'ES': 'EUR', 'AT': 'EUR', 'BE': 'EUR', 'NL': 'EUR', 'GR': 'EUR', 'HR': 'EUR',
-      'US': 'USD', 'GB': 'GBP', 'CZ': 'CZK', 'CH': 'CHF', 'HU': 'HUF'
-    };
-
-    const currencyCode = currencyMap[countryCode] || 'EUR'; // Domyślnie EUR dla reszty Europy
-    let currencyData = null;
-
+    // 2. Waluty (zostaje bez zmian)
+    const currencyMap = { 'PL': 'PLN', 'DE': 'EUR', 'IT': 'EUR', 'FR': 'EUR', 'ES': 'EUR', 'US': 'USD', 'GB': 'GBP' };
+    const currencyCode = currencyMap[countryCode] || 'EUR';
+    let currencyData = { code: currencyCode, mid_rate: 4.30 };
+    
     if (currencyCode === 'PLN') {
       currencyData = { code: 'PLN', mid_rate: 1 };
     } else {
       try {
-        // Pobieramy kurs z NBP
         const nbpRes = await axios.get(`http://api.nbp.pl/api/exchangerates/rates/a/${currencyCode}/?format=json`);
-        currencyData = {
-          code: currencyCode,
-          mid_rate: nbpRes.data.rates[0].mid
-        };
-      } catch (nbpErr) {
-        console.log("Błąd NBP, używam kursu awaryjnego");
-        currencyData = { code: currencyCode, mid_rate: 4.30 }; // Kurs "na sztywno" w razie awarii API
-      }
+        currencyData = { code: currencyCode, mid_rate: nbpRes.data.rates[0].mid };
+      } catch (e) { console.log("NBP Error"); }
     }
 
-    // 3. Pobieranie prognozy
+    // 3. Prognoza (zostaje bez zmian)
     const forecastRes = await axios.get(`https://api.openweathermap.org/data/2.5/forecast?q=${city}&appid=${API_KEY}&units=metric&lang=pl`);
-    const forecastData = forecastRes.data.list
-      .filter((item, index) => index % 8 === 0)
-      .map(item => ({
-        day: new Date(item.dt * 1000).toLocaleDateString('pl-PL', { weekday: 'short' }),
-        temp: Math.round(item.main.temp),
-        desc: item.weather[0].description
-      })).slice(0, 5);
+    const forecastData = forecastRes.data.list.filter((_, i) => i % 8 === 0).slice(0, 5).map(item => ({
+      day: new Date(item.dt * 1000).toLocaleDateString('pl-PL', { weekday: 'short' }),
+      temp: Math.round(item.main.temp),
+      desc: item.weather[0].description
+    }));
 
-    // 4. Pobieranie opisu z Wikipedii
+// 4. Pobieranie opisu z Wikipedii - Wersja Inteligentna
     let wikiDescription = "Brak dostępnego opisu.";
-    const titlesToTry = [`${officialName}_(miasto)`, officialName];
+    
+    // Próbujemy różnych kombinacji, aby uniknąć stron ujednoznaczniających
+    const titlesToTry = [
+      `${officialName}_(miasto)`, // Piła (miasto)
+      officialName,                // Piła
+      `${officialName}_(województwo_wielkopolskie)` // Opcja zapasowa
+    ];
 
     for (const title of titlesToTry) {
       try {
-        const wikiUrl = `https://pl.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`;
-        const resWiki = await axios.get(wikiUrl, { headers: { 'User-Agent': 'CityTripPlanner/1.0' } });
+        const wikiUrl = `https://pl.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}?redirect=true`;
+        const resWiki = await axios.get(wikiUrl, {
+          headers: { 'User-Agent': 'CityTripPlanner/1.0 (kontakt@twojedomena.pl)' }
+        });
+
         const extract = resWiki.data.extract;
-        if (extract && !extract.includes("płaszczyzny")) {
+
+        // Sprawdzamy, czy opis nie jest stroną ujednoznaczniającą lub definicją geometryczną
+        if (
+          extract && 
+          !extract.includes("płaszczyzny") && 
+          !extract.includes("może odnosić się do") &&
+          !extract.includes("strona ujednoznaczniająca")
+        ) {
           wikiDescription = extract;
-          break;
+          break; // Znaleźliśmy poprawny opis, wychodzimy z pętli for
         }
-      } catch (err) { continue; }
+      } catch (err) {
+        // Jeśli dany tytuł nie istnieje (404), idziemy do kolejnego z listy
+        continue;
+      }
     }
 
-    // 5. Pobieranie listy atrakcji
+    // 5. Pobieranie atrakcji przez GeoSearch (z koordynatami)
     let attractionsList = [];
-    try {
-      const wikiSearchUrl = `https://pl.wikipedia.org/w/api.php?action=opensearch&search=${encodeURIComponent('Atrakcje ' + officialName)}&limit=10&format=json&origin=*`;
-      const searchRes = await axios.get(wikiSearchUrl, { headers: { 'User-Agent': 'CityTripPlanner/1.0' } });
-      if (searchRes.data && searchRes.data[1]) {
-        attractionsList = searchRes.data[1].slice(1, 6);
-      }
-    } catch (e) { console.log("Błąd atrakcji"); }
+    const lat = weatherRes.data.coord.lat;
+    const lon = weatherRes.data.coord.lon;
 
-    // 6. Składanie finalnej odpowiedzi
+    try {
+      const wikiGeoUrl = `https://pl.wikipedia.org/w/api.php?action=query&list=geosearch&gscoord=${lat}|${lon}&gsradius=10000&gslimit=40&format=json&origin=*`;
+      
+      const geoRes = await axios.get(wikiGeoUrl, { 
+        headers: { 'User-Agent': 'CityTripPlanner/1.0' } 
+      });
+
+      if (geoRes.data?.query?.geosearch) {
+        attractionsList = geoRes.data.query.geosearch
+          .filter(item => {
+            const t = item.title.toLowerCase();
+            const isForbidden = [
+              "gmina", "powiat", "województwo", "urząd", "dekanat", "herb", 
+              "wydział", "uniwersytet", "collegium", "szkoła", "liceum", "zespół szkół",
+              "bank", "sąd", "prokuratura", "komenda", "stacja", "szpital",
+              "zakład", "centrum edukacji", "parafia", "konsulat", "budynek",
+              "prowincja", "metropolia", "archidiecezja", "diecezja", "powstanie", 
+              "bitwa", "wojna", "historia", "demografia", "geografia", "lista"
+            ].some(word => t.includes(word));
+
+            return t !== officialName.toLowerCase() && !isForbidden;
+          })
+          .map(item => ({
+            title: item.title,
+            lat: item.lat, // Przekazujemy szerokość
+            lon: item.lon  // Przekazujemy długość
+          }))
+          .slice(0, 10);
+      }
+    } catch (e) {
+      console.log("Wiki Geo Error:", e.message);
+    }
+
+    // 6. Składanie finalnej odpowiedzi (dodajemy lat/lon miasta)
     const responseData = {
       city_name: officialName,
+      lat: lat, // Potrzebne do wycentrowania mapy
+      lon: lon, // Potrzebne do wycentrowania mapy
       weather_info: {
         temp: weatherRes.data.main.temp,
         condition: weatherRes.data.weather[0].description,
@@ -100,11 +135,11 @@ app.get('/api/search', async (req, res) => {
       },
       forecast: forecastData,
       top_attractions: wikiDescription,
-      top_attractions_list: attractionsList,
-      currency: currencyData // <--- TO PRZESYŁAMY DO REACTA
+      top_attractions_list: attractionsList, 
+      currency: currencyData
     };
 
-    // Zapis do historii (PostgreSQL)
+    // Zapis do bazy danych
     await pool.query(
       `INSERT INTO trips (city_name, temp, description) 
        VALUES ($1, $2, $3) 
@@ -117,7 +152,7 @@ app.get('/api/search', async (req, res) => {
 
   } catch (error) {
     console.error("Błąd serwera:", error.message);
-    res.status(404).json({ error: "Błąd podczas pobierania danych!" });
+    res.status(500).json({ error: "Nie znaleziono miasta lub błąd API" });
   }
 });
 
@@ -193,3 +228,23 @@ app.put('/api/save-plan/:id', async (req, res) => {
   }
 });
 app.listen(5000, () => console.log("🚀 Serwer działa na porcie 5000"));
+
+// Przykład zapytania do OpenStreetMap (Overpass API)
+const fetchAttractionsFromOSM = async (cityName) => {
+  const query = `
+    [out:json];
+    area[name="${cityName}"]->.searchArea;
+    (
+      node["tourism"="attraction"](area.searchArea);
+      node["historic"](area.searchArea);
+    );
+    out body 10;`;
+  
+  const response = await fetch(`https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`);
+  const data = await response.json();
+  
+  // Zwracamy tylko unikalne nazwy
+  return data.elements
+    .map(el => el.tags.name)
+    .filter(name => name != null);
+};

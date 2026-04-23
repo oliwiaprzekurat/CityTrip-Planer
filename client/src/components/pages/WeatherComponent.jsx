@@ -1,7 +1,7 @@
 import React from "react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { Cloud, Sun, CloudRain, Thermometer, Wind as AirIcon } from "lucide-react";
-import './style/style.css';
+import "../style/style.css";
 
 const getWeatherIcon = (desc) => {
   const d = desc ? desc.toLowerCase() : "";
